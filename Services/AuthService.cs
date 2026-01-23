@@ -15,11 +15,13 @@ namespace EconomyBackPortifolio.Services
     {
         private readonly ApplicationDbContext _context;
         private readonly IConfiguration _configuration;
+        private readonly IWalletService _walletService;
 
-        public AuthService(ApplicationDbContext context, IConfiguration configuration)
+        public AuthService(ApplicationDbContext context, IConfiguration configuration, IWalletService walletService)
         {
             _context = context;
             _configuration = configuration;
+            _walletService = walletService;
         }
 
         public async Task<AuthResponseDto> RegisterAsync(RegisterDto registerDto)
@@ -46,6 +48,9 @@ namespace EconomyBackPortifolio.Services
 
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
+
+            // Criar wallet BRL automaticamente
+            await _walletService.CreateWalletAsync(user.Id, new CreateWalletDto { Currency = "BRL" });
 
             // Gerar tokens
             var token = GenerateJwtToken(user);

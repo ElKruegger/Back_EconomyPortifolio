@@ -18,6 +18,7 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Register Services
+builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 
 // Configure JWT Authentication
