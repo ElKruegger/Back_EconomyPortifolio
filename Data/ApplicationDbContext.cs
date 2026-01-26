@@ -46,6 +46,7 @@ namespace EconomyBackPortifolio.Data
                 entity.Property(e => e.Name).HasColumnName("name").HasMaxLength(150);
                 entity.Property(e => e.Type).HasColumnName("type").HasMaxLength(20);
                 entity.Property(e => e.Currency).HasColumnName("currency").HasMaxLength(10);
+                entity.Property(e => e.CurrentPrice).HasColumnName("current_price").HasPrecision(18, 6);
                 entity.Property(e => e.CreatedAt).HasColumnName("created_at");
             });
 
