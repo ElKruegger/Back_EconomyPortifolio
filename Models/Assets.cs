@@ -1,4 +1,4 @@
-﻿namespace EconomyBackPortifolio.Models
+namespace EconomyBackPortifolio.Models
 {
     public class Assets
     {
@@ -7,6 +7,7 @@
         public string Name { get; set; } = string.Empty;
         public string Type { get; set; } = string.Empty;
         public string Currency { get; set; } = string.Empty;
+        public decimal CurrentPrice { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 }
