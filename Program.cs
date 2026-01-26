@@ -53,6 +53,8 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<ITransactionService, TransactionService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IAssetService, AssetService>();
+builder.Services.AddScoped<IPositionService, PositionService>();
 
 // Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
