@@ -65,6 +65,31 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
+        /// Obtém uma wallet por moeda do usuário autenticado
+        /// </summary>
+        [HttpGet("currency/{currency}")]
+        public async Task<ActionResult<WalletDto>> GetWalletByCurrency(string currency)
+        {
+            try
+            {
+                var userId = GetUserId();
+                var wallet = await _walletService.GetWalletByCurrencyAsync(userId, currency);
+
+                if (wallet == null)
+                {
+                    return NotFound(new { message = $"Wallet não encontrada para a moeda {currency}" });
+                }
+
+                return Ok(wallet);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao obter wallet por moeda: {Currency}", currency);
+                return StatusCode(500, new { message = "Erro interno do servidor" });
+            }
+        }
+
+        /// <summary>
         /// Cria uma nova wallet para o usuário autenticado
         /// </summary>
         [HttpPost]
