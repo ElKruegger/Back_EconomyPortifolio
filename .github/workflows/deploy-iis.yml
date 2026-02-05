@@ -10,7 +10,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, Windows, X64]   # roda na SUA máquina onde está o IIS
+    runs-on: [self-hosted, Windows, X64]   # roda na SUA máquina onde está o IIS.
     steps:
       - name: Checkout
         uses: actions/checkout@v4
