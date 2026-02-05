@@ -30,4 +30,4 @@ jobs:
         run: |
           $pool = "$env:IIS_APP_POOL"
           if ($pool) { Restart-WebAppPool -Name $pool }
-        shell: pwsh
+        shell: powershell
