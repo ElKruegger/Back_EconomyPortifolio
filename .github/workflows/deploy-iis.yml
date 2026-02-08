@@ -1,16 +1,11 @@
-# Deploy para IIS (máquina local com self-hosted runner)
-# Requer: runner instalado na mesma máquina onde está o IIS
-# Fluxo em camadas: PR → developer (deploy aqui) → depois main (produção, quando configurar)
-
 name: Build and Deploy to IIS
 
 on:
-  push:
-    branches: [ developer ]
+  workflow_dispatch
 
 jobs:
   deploy:
-    runs-on: [self-hosted, Windows, X64]   # roda na SUA máquina onde está o IIS.
+    runs-on: [self-hosted, Windows, X64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,7 +20,6 @@ jobs:
           if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force }
           Copy-Item -Path ".\publish\*" -Destination $dest -Recurse -Force
 
-      # Opcional: reiniciar o App Pool do IIS para carregar a nova versão
       - name: Restart IIS App Pool
         run: |
           $pool = "$env:IIS_APP_POOL"
