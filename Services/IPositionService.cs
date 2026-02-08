@@ -6,5 +6,6 @@ namespace EconomyBackPortifolio.Services
     {
         Task<IEnumerable<PositionDto>> GetUserPositionsAsync(Guid userId);
         Task<PositionDto?> GetPositionByIdAsync(Guid positionId, Guid userId);
+        Task<PortfolioSummaryDto> GetPortfolioSummaryAsync(Guid userId);
     }
 }

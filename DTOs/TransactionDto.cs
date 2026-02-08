@@ -68,4 +68,64 @@ namespace EconomyBackPortifolio.DTOs
         [Range(0.000001, 999999999.99, ErrorMessage = "O preço deve ser maior que zero")]
         public decimal Price { get; set; }
     }
+
+    /// <summary>
+    /// Filtros para busca de transações (query parameters)
+    /// </summary>
+    public class TransactionFilterDto
+    {
+        /// <summary>Tipo: DEPOSIT, BUY, SELL, CONVERSION</summary>
+        public string? Type { get; set; }
+
+        /// <summary>Moeda da wallet (BRL, USD, EUR, etc.)</summary>
+        public string? Currency { get; set; }
+
+        /// <summary>ID do asset específico</summary>
+        public Guid? AssetId { get; set; }
+
+        /// <summary>Data inicial do período</summary>
+        public DateTime? FromDate { get; set; }
+
+        /// <summary>Data final do período</summary>
+        public DateTime? ToDate { get; set; }
+    }
+
+    /// <summary>
+    /// Resumo de transações agrupado por tipo (para gráficos)
+    /// </summary>
+    public class TransactionsSummaryDto
+    {
+        public decimal TotalDeposits { get; set; }
+        public decimal TotalBuys { get; set; }
+        public decimal TotalSells { get; set; }
+        public decimal TotalConversions { get; set; }
+        public int TransactionCount { get; set; }
+        public List<TransactionsByTypeDto> ByType { get; set; } = new();
+        public List<MonthlyTransactionDto> MonthlyHistory { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Totais agrupados por tipo de transação
+    /// </summary>
+    public class TransactionsByTypeDto
+    {
+        public string Type { get; set; } = string.Empty;
+        public int Count { get; set; }
+        public decimal Total { get; set; }
+    }
+
+    /// <summary>
+    /// Totais mensais de transações (para gráficos de linha/barra ao longo do tempo)
+    /// </summary>
+    public class MonthlyTransactionDto
+    {
+        public int Year { get; set; }
+        public int Month { get; set; }
+        public string Label { get; set; } = string.Empty;
+        public decimal TotalDeposits { get; set; }
+        public decimal TotalBuys { get; set; }
+        public decimal TotalSells { get; set; }
+        public decimal TotalConversions { get; set; }
+        public int TransactionCount { get; set; }
+    }
 }

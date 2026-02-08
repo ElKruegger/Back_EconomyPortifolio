@@ -91,6 +91,8 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseMiddleware<EconomyBackPortifolio.Middleware.ExceptionHandlingMiddleware>();
+
 app.UseHttpsRedirection();
 
 app.UseAuthentication();

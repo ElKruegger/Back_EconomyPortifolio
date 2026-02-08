@@ -24,3 +24,8 @@ Backend API para gerenciamento de portfólio de investimentos.
 ## Banco de Dados
 
 O projeto utiliza PostgreSQL. Certifique-se de ter o banco configurado antes de executar a aplicação.
+
+
+## IIS
+O projeto esta sendo implementado dentro de um IIS como parte dos estudos, em possiveis casos de erro,
+consulte o projeto pra trocar a abordagem do projeto.

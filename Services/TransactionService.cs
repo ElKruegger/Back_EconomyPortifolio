@@ -289,18 +289,54 @@ namespace EconomyBackPortifolio.Services
             return await MapToTransactionDtoAsync(transaction);
         }
 
-        public async Task<IEnumerable<TransactionDto>> GetUserTransactionsAsync(Guid userId)
+        public async Task<IEnumerable<TransactionDto>> GetUserTransactionsAsync(Guid userId, TransactionFilterDto? filter = null)
         {
-            // Buscar todas as wallets do usuário
-            var wallets = await _context.Wallets
-                .Where(w => w.UserId == userId)
-                .Select(w => w.Id)
-                .ToListAsync();
+            // Buscar wallets do usuário (com filtro de moeda se aplicável)
+            var walletsQuery = _context.Wallets.Where(w => w.UserId == userId);
 
-            var transactions = await _context.Transactions
-                .Where(t => wallets.Contains(t.WalletId))
+            if (!string.IsNullOrWhiteSpace(filter?.Currency))
+            {
+                var normalizedCurrency = Currency.Normalize(filter.Currency);
+                walletsQuery = walletsQuery.Where(w => w.Currency == normalizedCurrency);
+            }
+
+            var walletIds = await walletsQuery.Select(w => w.Id).ToListAsync();
+
+            // Construir query com filtros
+            var query = _context.Transactions
+                .Where(t => walletIds.Contains(t.WalletId))
                 .Include(t => t.Wallet)
                 .Include(t => t.Asset)
+                .AsQueryable();
+
+            // Filtro por tipo
+            if (!string.IsNullOrWhiteSpace(filter?.Type))
+            {
+                var normalizedType = filter.Type.ToUpperInvariant().Trim();
+                query = query.Where(t => t.Type == normalizedType);
+            }
+
+            // Filtro por asset
+            if (filter?.AssetId.HasValue == true)
+            {
+                query = query.Where(t => t.AssetId == filter.AssetId.Value);
+            }
+
+            // Filtro por data inicial
+            if (filter?.FromDate.HasValue == true)
+            {
+                var fromDate = DateTime.SpecifyKind(filter.FromDate.Value.Date, DateTimeKind.Utc);
+                query = query.Where(t => t.TransactionAt >= fromDate);
+            }
+
+            // Filtro por data final
+            if (filter?.ToDate.HasValue == true)
+            {
+                var toDate = DateTime.SpecifyKind(filter.ToDate.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+                query = query.Where(t => t.TransactionAt <= toDate);
+            }
+
+            var transactions = await query
                 .OrderByDescending(t => t.TransactionAt)
                 .ToListAsync();
 
@@ -311,6 +347,95 @@ namespace EconomyBackPortifolio.Services
             }
 
             return result;
+        }
+
+        public async Task<TransactionsSummaryDto> GetTransactionsSummaryAsync(Guid userId, TransactionFilterDto? filter = null)
+        {
+            // Buscar wallets do usuário (com filtro de moeda se aplicável)
+            var walletsQuery = _context.Wallets.Where(w => w.UserId == userId);
+
+            if (!string.IsNullOrWhiteSpace(filter?.Currency))
+            {
+                var normalizedCurrency = Currency.Normalize(filter.Currency);
+                walletsQuery = walletsQuery.Where(w => w.Currency == normalizedCurrency);
+            }
+
+            var walletIds = await walletsQuery.Select(w => w.Id).ToListAsync();
+
+            // Construir query com filtros
+            var query = _context.Transactions
+                .Where(t => walletIds.Contains(t.WalletId))
+                .AsQueryable();
+
+            // Filtro por tipo
+            if (!string.IsNullOrWhiteSpace(filter?.Type))
+            {
+                var normalizedType = filter.Type.ToUpperInvariant().Trim();
+                query = query.Where(t => t.Type == normalizedType);
+            }
+
+            // Filtro por asset
+            if (filter?.AssetId.HasValue == true)
+            {
+                query = query.Where(t => t.AssetId == filter.AssetId.Value);
+            }
+
+            // Filtro por data inicial
+            if (filter?.FromDate.HasValue == true)
+            {
+                var fromDate = DateTime.SpecifyKind(filter.FromDate.Value.Date, DateTimeKind.Utc);
+                query = query.Where(t => t.TransactionAt >= fromDate);
+            }
+
+            // Filtro por data final
+            if (filter?.ToDate.HasValue == true)
+            {
+                var toDate = DateTime.SpecifyKind(filter.ToDate.Value.Date.AddDays(1).AddTicks(-1), DateTimeKind.Utc);
+                query = query.Where(t => t.TransactionAt <= toDate);
+            }
+
+            var transactions = await query.ToListAsync();
+
+            // Agrupar por tipo
+            var byType = transactions
+                .GroupBy(t => t.Type)
+                .Select(g => new TransactionsByTypeDto
+                {
+                    Type = g.Key,
+                    Count = g.Count(),
+                    Total = g.Sum(t => t.Total)
+                })
+                .OrderBy(t => t.Type)
+                .ToList();
+
+            // Agrupar por mês (para gráficos de evolução)
+            var monthlyHistory = transactions
+                .GroupBy(t => new { t.TransactionAt.Year, t.TransactionAt.Month })
+                .Select(g => new MonthlyTransactionDto
+                {
+                    Year = g.Key.Year,
+                    Month = g.Key.Month,
+                    Label = $"{g.Key.Year}-{g.Key.Month:D2}",
+                    TotalDeposits = g.Where(t => t.Type == "DEPOSIT").Sum(t => t.Total),
+                    TotalBuys = g.Where(t => t.Type == "BUY").Sum(t => t.Total),
+                    TotalSells = g.Where(t => t.Type == "SELL").Sum(t => t.Total),
+                    TotalConversions = g.Where(t => t.Type == "CONVERSION").Sum(t => t.Total),
+                    TransactionCount = g.Count()
+                })
+                .OrderBy(m => m.Year)
+                .ThenBy(m => m.Month)
+                .ToList();
+
+            return new TransactionsSummaryDto
+            {
+                TotalDeposits = transactions.Where(t => t.Type == "DEPOSIT").Sum(t => t.Total),
+                TotalBuys = transactions.Where(t => t.Type == "BUY").Sum(t => t.Total),
+                TotalSells = transactions.Where(t => t.Type == "SELL").Sum(t => t.Total),
+                TotalConversions = transactions.Where(t => t.Type == "CONVERSION").Sum(t => t.Total),
+                TransactionCount = transactions.Count,
+                ByType = byType,
+                MonthlyHistory = monthlyHistory
+            };
         }
 
         public async Task<TransactionDto?> GetTransactionByIdAsync(Guid transactionId, Guid userId)

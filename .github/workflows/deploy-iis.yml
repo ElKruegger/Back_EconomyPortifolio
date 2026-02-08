@@ -1,0 +1,27 @@
+name: Build and Deploy to IIS
+
+on:
+  workflow_dispatch
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Windows, X64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish
+        run: dotnet publish -c Release -o publish
+
+      - name: Deploy to IIS folder
+        run: |
+          $dest = "$env:IIS_DEPLOY_PATH"
+          if (-not $dest) { $dest = "C:\inetpub\wwwroot\EconomyBackPortifolio" }
+          if (-not (Test-Path $dest)) { New-Item -ItemType Directory -Path $dest -Force }
+          Copy-Item -Path ".\publish\*" -Destination $dest -Recurse -Force
+
+      - name: Restart IIS App Pool
+        run: |
+          $pool = "$env:IIS_APP_POOL"
+          if ($pool) { Restart-WebAppPool -Name $pool }
+        shell: powershell

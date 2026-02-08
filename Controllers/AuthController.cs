@@ -1,6 +1,8 @@
 using EconomyBackPortifolio.DTOs;
 using EconomyBackPortifolio.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace EconomyBackPortifolio.Controllers
 {
@@ -15,6 +17,36 @@ namespace EconomyBackPortifolio.Controllers
         {
             _authService = authService;
             _logger = logger;
+        }
+
+        /// <summary>
+        /// Retorna os dados do usuário autenticado (para persistência de sessão)
+        /// </summary>
+        [HttpGet("me")]
+        [Authorize]
+        public async Task<ActionResult<UserInfoDto>> GetMe()
+        {
+            try
+            {
+                var userId = GetUserId();
+                var user = await _authService.GetUserByIdAsync(userId);
+
+                if (user == null)
+                {
+                    return NotFound(new { message = "Usuário não encontrado" });
+                }
+
+                return Ok(user);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao obter dados do usuário autenticado");
+                return StatusCode(500, new { message = "Erro interno do servidor" });
+            }
         }
 
         /// <summary>
@@ -75,6 +107,16 @@ namespace EconomyBackPortifolio.Controllers
                 _logger.LogError(ex, "Erro ao realizar login: {Email}", loginDto.Email);
                 return StatusCode(500, new { message = "Erro interno do servidor" });
             }
+        }
+
+        private Guid GetUserId()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
+            {
+                throw new UnauthorizedAccessException("Usuário não autenticado");
+            }
+            return userId;
         }
     }
 }
