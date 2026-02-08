@@ -8,7 +8,8 @@ namespace EconomyBackPortifolio.Services
         Task<TransactionDto> ConvertCurrencyAsync(Guid userId, ConvertCurrencyDto convertDto);
         Task<TransactionDto> BuyAssetAsync(Guid userId, BuyAssetDto buyDto);
         Task<TransactionDto> SellAssetAsync(Guid userId, SellAssetDto sellDto);
-        Task<IEnumerable<TransactionDto>> GetUserTransactionsAsync(Guid userId);
+        Task<IEnumerable<TransactionDto>> GetUserTransactionsAsync(Guid userId, TransactionFilterDto? filter = null);
         Task<TransactionDto?> GetTransactionByIdAsync(Guid transactionId, Guid userId);
+        Task<TransactionsSummaryDto> GetTransactionsSummaryAsync(Guid userId, TransactionFilterDto? filter = null);
     }
 }

@@ -40,6 +40,25 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
+        /// Resumo consolidado do portfólio (totais, alocação, P&L) para o dashboard
+        /// </summary>
+        [HttpGet("summary")]
+        public async Task<ActionResult<PortfolioSummaryDto>> GetPortfolioSummary()
+        {
+            try
+            {
+                var userId = GetUserId();
+                var summary = await _positionService.GetPortfolioSummaryAsync(userId);
+                return Ok(summary);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao obter resumo do portfólio");
+                return StatusCode(500, new { message = "Erro interno do servidor" });
+            }
+        }
+
+        /// <summary>
         /// Obtém uma posição específica por ID
         /// </summary>
         [HttpGet("{id}")]

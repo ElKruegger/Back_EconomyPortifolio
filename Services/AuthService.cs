@@ -112,6 +112,20 @@ namespace EconomyBackPortifolio.Services
                 .FirstOrDefaultAsync(u => u.Email == email.ToLowerInvariant());
         }
 
+        public async Task<UserInfoDto?> GetUserByIdAsync(Guid userId)
+        {
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null)
+                return null;
+
+            return new UserInfoDto
+            {
+                Id = user.Id,
+                Name = user.Name,
+                Email = user.Email
+            };
+        }
+
         private string GenerateJwtToken(Users user)
         {
             var jwtSettings = _configuration.GetSection("JwtSettings");
