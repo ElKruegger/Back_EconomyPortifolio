@@ -9,5 +9,6 @@ namespace EconomyBackPortifolio.Services
         Task<AuthResponseDto> LoginAsync(LoginDto loginDto);
         Task<bool> ValidateUserAsync(string email, string password);
         Task<Users?> GetUserByEmailAsync(string email);
+        Task<UserInfoDto?> GetUserByIdAsync(Guid userId);
     }
 }

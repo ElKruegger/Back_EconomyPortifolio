@@ -21,20 +21,69 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Lista todas as transações do usuário autenticado
+        /// Lista transações do usuário com filtros opcionais
+        /// Query params: type, currency, assetId, fromDate, toDate
         /// </summary>
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<TransactionDto>>> GetTransactions()
+        public async Task<ActionResult<IEnumerable<TransactionDto>>> GetTransactions(
+            [FromQuery] string? type,
+            [FromQuery] string? currency,
+            [FromQuery] Guid? assetId,
+            [FromQuery] DateTime? fromDate,
+            [FromQuery] DateTime? toDate)
         {
             try
             {
                 var userId = GetUserId();
-                var transactions = await _transactionService.GetUserTransactionsAsync(userId);
+                var filter = new TransactionFilterDto
+                {
+                    Type = type,
+                    Currency = currency,
+                    AssetId = assetId,
+                    FromDate = fromDate,
+                    ToDate = toDate
+                };
+
+                var transactions = await _transactionService.GetUserTransactionsAsync(userId, filter);
                 return Ok(transactions);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Erro ao listar transações do usuário");
+                return StatusCode(500, new { message = "Erro interno do servidor" });
+            }
+        }
+
+        /// <summary>
+        /// Resumo das transações do usuário agrupado por tipo e mês (para gráficos)
+        /// Query params: type, currency, assetId, fromDate, toDate
+        /// </summary>
+        [HttpGet("summary")]
+        public async Task<ActionResult<TransactionsSummaryDto>> GetTransactionsSummary(
+            [FromQuery] string? type,
+            [FromQuery] string? currency,
+            [FromQuery] Guid? assetId,
+            [FromQuery] DateTime? fromDate,
+            [FromQuery] DateTime? toDate)
+        {
+            try
+            {
+                var userId = GetUserId();
+                var filter = new TransactionFilterDto
+                {
+                    Type = type,
+                    Currency = currency,
+                    AssetId = assetId,
+                    FromDate = fromDate,
+                    ToDate = toDate
+                };
+
+                var summary = await _transactionService.GetTransactionsSummaryAsync(userId, filter);
+                return Ok(summary);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao obter resumo de transações");
                 return StatusCode(500, new { message = "Erro interno do servidor" });
             }
         }
