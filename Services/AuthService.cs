@@ -1,5 +1,6 @@
 using EconomyBackPortifolio.Data;
 using EconomyBackPortifolio.DTOs;
+using EconomyBackPortifolio.Enums;
 using EconomyBackPortifolio.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -16,33 +17,37 @@ namespace EconomyBackPortifolio.Services
         private readonly ApplicationDbContext _context;
         private readonly IConfiguration _configuration;
         private readonly IWalletService _walletService;
+        private readonly IVerificationCodeService _verificationCodeService;
 
-        public AuthService(ApplicationDbContext context, IConfiguration configuration, IWalletService walletService)
+        public AuthService(
+            ApplicationDbContext context,
+            IConfiguration configuration,
+            IWalletService walletService,
+            IVerificationCodeService verificationCodeService)
         {
             _context = context;
             _configuration = configuration;
             _walletService = walletService;
+            _verificationCodeService = verificationCodeService;
         }
 
-        public async Task<AuthResponseDto> RegisterAsync(RegisterDto registerDto)
+        public async Task<MessageResponseDto> RegisterAsync(RegisterDto registerDto)
         {
-            // Verificar se o email já existe
             var existingUser = await GetUserByEmailAsync(registerDto.Email);
             if (existingUser != null)
             {
                 throw new InvalidOperationException("Email já está em uso");
             }
 
-            // Criar hash da senha
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(registerDto.Password);
 
-            // Criar novo usuário
             var user = new Users
             {
                 Id = Guid.NewGuid(),
                 Name = registerDto.Name,
                 Email = registerDto.Email.ToLowerInvariant(),
                 PasswordHash = passwordHash,
+                EmailVerified = false,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -52,7 +57,41 @@ namespace EconomyBackPortifolio.Services
             // Criar wallet BRL automaticamente
             await _walletService.CreateWalletAsync(user.Id, new CreateWalletDto { Currency = "BRL" });
 
-            // Gerar tokens
+            // Gerar e enviar código de verificação por e-mail
+            await _verificationCodeService.GenerateAndSendCodeAsync(
+                user.Id, user.Email, user.Name, VerificationCodeType.Registration);
+
+            return new MessageResponseDto("Código de verificação enviado para o seu e-mail. Verifique sua caixa de entrada.");
+        }
+
+        public async Task<MessageResponseDto> LoginAsync(LoginDto loginDto)
+        {
+            var user = await GetUserByEmailAsync(loginDto.Email.ToLowerInvariant());
+
+            if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+            {
+                throw new UnauthorizedAccessException("Email ou senha inválidos");
+            }
+
+            // Gerar e enviar código de verificação por e-mail
+            await _verificationCodeService.GenerateAndSendCodeAsync(
+                user.Id, user.Email, user.Name, VerificationCodeType.Login);
+
+            return new MessageResponseDto("Código de verificação enviado para o seu e-mail. Verifique sua caixa de entrada.");
+        }
+
+        public async Task<AuthResponseDto> VerifyCodeAsync(VerifyCodeDto verifyCodeDto)
+        {
+            var user = await _verificationCodeService.ValidateCodeAsync(
+                verifyCodeDto.Email, verifyCodeDto.Code, verifyCodeDto.Type);
+
+            // Se for verificação de registro, marcar e-mail como verificado
+            if (verifyCodeDto.Type == VerificationCodeType.Registration)
+            {
+                user.EmailVerified = true;
+                await _context.SaveChangesAsync();
+            }
+
             var token = GenerateJwtToken(user);
             var refreshToken = GenerateRefreshToken();
 
@@ -70,31 +109,31 @@ namespace EconomyBackPortifolio.Services
             };
         }
 
-        public async Task<AuthResponseDto> LoginAsync(LoginDto loginDto)
+        public async Task<MessageResponseDto> ForgotPasswordAsync(ForgotPasswordDto forgotPasswordDto)
         {
-            var user = await GetUserByEmailAsync(loginDto.Email.ToLowerInvariant());
-            
-            if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+            var user = await GetUserByEmailAsync(forgotPasswordDto.Email.ToLowerInvariant());
+
+            // Retornar mensagem genérica mesmo se o usuário não existir (segurança)
+            if (user == null)
             {
-                throw new UnauthorizedAccessException("Email ou senha inválidos");
+                return new MessageResponseDto("Se o e-mail estiver cadastrado, você receberá um código de verificação.");
             }
 
-            // Gerar tokens
-            var token = GenerateJwtToken(user);
-            var refreshToken = GenerateRefreshToken();
+            await _verificationCodeService.GenerateAndSendCodeAsync(
+                user.Id, user.Email, user.Name, VerificationCodeType.PasswordReset);
 
-            return new AuthResponseDto
-            {
-                Token = token,
-                RefreshToken = refreshToken,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(GetJwtExpirationMinutes()),
-                User = new UserInfoDto
-                {
-                    Id = user.Id,
-                    Name = user.Name,
-                    Email = user.Email
-                }
-            };
+            return new MessageResponseDto("Se o e-mail estiver cadastrado, você receberá um código de verificação.");
+        }
+
+        public async Task<MessageResponseDto> ResetPasswordAsync(ResetPasswordDto resetPasswordDto)
+        {
+            var user = await _verificationCodeService.ValidateCodeAsync(
+                resetPasswordDto.Email, resetPasswordDto.Code, VerificationCodeType.PasswordReset);
+
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(resetPasswordDto.NewPassword);
+            await _context.SaveChangesAsync();
+
+            return new MessageResponseDto("Senha redefinida com sucesso. Você já pode fazer login com sua nova senha.");
         }
 
         public async Task<bool> ValidateUserAsync(string email, string password)
