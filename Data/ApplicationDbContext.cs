@@ -15,6 +15,7 @@ namespace EconomyBackPortifolio.Data
         public DbSet<Wallets> Wallets { get; set; }
         public DbSet<Positions> Positions { get; set; }
         public DbSet<Transactions> Transactions { get; set; }
+        public DbSet<VerificationCodes> VerificationCodes { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -31,7 +32,29 @@ namespace EconomyBackPortifolio.Data
                 entity.Property(e => e.Name).HasColumnName("name").HasMaxLength(100);
                 entity.Property(e => e.Email).HasColumnName("email").HasMaxLength(150);
                 entity.Property(e => e.PasswordHash).HasColumnName("password_hash").HasMaxLength(255);
+                entity.Property(e => e.EmailVerified).HasColumnName("email_verified").HasDefaultValue(false);
                 entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+            });
+
+            // Configuração da tabela VerificationCodes
+            modelBuilder.Entity<VerificationCodes>(entity =>
+            {
+                entity.ToTable("verification_codes");
+                entity.HasKey(e => e.Id).HasName("pk_verification_codes");
+                entity.HasIndex(e => new { e.UserId, e.Type, e.IsUsed }).HasDatabaseName("ix_verification_codes_user_type_used");
+
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.UserId).HasColumnName("user_id");
+                entity.Property(e => e.Code).HasColumnName("code").HasMaxLength(6);
+                entity.Property(e => e.Type).HasColumnName("type");
+                entity.Property(e => e.ExpiresAt).HasColumnName("expires_at");
+                entity.Property(e => e.IsUsed).HasColumnName("is_used").HasDefaultValue(false);
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .HasConstraintName("fk_verification_codes_user_id__users");
             });
 
             // Configuração da tabela Assets

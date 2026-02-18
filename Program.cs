@@ -41,7 +41,14 @@ builder.Services.AddSwaggerGen(c =>
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+// Configure Email Settings
+var emailSettings = builder.Configuration.GetSection("EmailSettings").Get<EmailSettings>()
+    ?? throw new InvalidOperationException("EmailSettings não configurado no appsettings.json");
+builder.Services.AddSingleton(emailSettings);
+
 // Register Services
+builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IVerificationCodeService, VerificationCodeService>();
 builder.Services.AddScoped<IWalletService, WalletService>();
 builder.Services.AddScoped<ITransactionService, TransactionService>();
 builder.Services.AddScoped<IAuthService, AuthService>();

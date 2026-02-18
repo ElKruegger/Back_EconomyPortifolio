@@ -50,10 +50,10 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Registra um novo usuário no sistema
+        /// Registra um novo usuário e envia código de verificação por e-mail
         /// </summary>
         [HttpPost("register")]
-        public async Task<ActionResult<AuthResponseDto>> Register([FromBody] RegisterDto registerDto)
+        public async Task<ActionResult<MessageResponseDto>> Register([FromBody] RegisterDto registerDto)
         {
             try
             {
@@ -63,7 +63,7 @@ namespace EconomyBackPortifolio.Controllers
                 }
 
                 var result = await _authService.RegisterAsync(registerDto);
-                _logger.LogInformation("Novo usuário registrado: {Email}", registerDto.Email);
+                _logger.LogInformation("Código de verificação enviado para novo registro: {Email}", registerDto.Email);
 
                 return Ok(result);
             }
@@ -80,10 +80,10 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Autentica um usuário e retorna tokens de acesso
+        /// Autentica credenciais e envia código de verificação por e-mail
         /// </summary>
         [HttpPost("login")]
-        public async Task<ActionResult<AuthResponseDto>> Login([FromBody] LoginDto loginDto)
+        public async Task<ActionResult<MessageResponseDto>> Login([FromBody] LoginDto loginDto)
         {
             try
             {
@@ -93,7 +93,7 @@ namespace EconomyBackPortifolio.Controllers
                 }
 
                 var result = await _authService.LoginAsync(loginDto);
-                _logger.LogInformation("Login realizado com sucesso: {Email}", loginDto.Email);
+                _logger.LogInformation("Código de verificação enviado para login: {Email}", loginDto.Email);
 
                 return Ok(result);
             }
@@ -105,6 +105,91 @@ namespace EconomyBackPortifolio.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Erro ao realizar login: {Email}", loginDto.Email);
+                return StatusCode(500, new { message = "Erro interno do servidor" });
+            }
+        }
+
+        /// <summary>
+        /// Valida o código de verificação e retorna tokens de acesso (JWT + RefreshToken)
+        /// </summary>
+        [HttpPost("verify-code")]
+        public async Task<ActionResult<AuthResponseDto>> VerifyCode([FromBody] VerifyCodeDto verifyCodeDto)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
+
+                var result = await _authService.VerifyCodeAsync(verifyCodeDto);
+                _logger.LogInformation("Código verificado com sucesso: {Email}", verifyCodeDto.Email);
+
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning("Código de verificação inválido: {Email}", verifyCodeDto.Email);
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao verificar código: {Email}", verifyCodeDto.Email);
+                return StatusCode(500, new { message = "Erro interno do servidor" });
+            }
+        }
+
+        /// <summary>
+        /// Solicita redefinição de senha enviando código de verificação por e-mail
+        /// </summary>
+        [HttpPost("forgot-password")]
+        public async Task<ActionResult<MessageResponseDto>> ForgotPassword([FromBody] ForgotPasswordDto forgotPasswordDto)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
+
+                var result = await _authService.ForgotPasswordAsync(forgotPasswordDto);
+                _logger.LogInformation("Solicitação de redefinição de senha: {Email}", forgotPasswordDto.Email);
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao processar redefinição de senha: {Email}", forgotPasswordDto.Email);
+                return StatusCode(500, new { message = "Erro interno do servidor" });
+            }
+        }
+
+        /// <summary>
+        /// Redefine a senha do usuário usando o código de verificação
+        /// </summary>
+        [HttpPost("reset-password")]
+        public async Task<ActionResult<MessageResponseDto>> ResetPassword([FromBody] ResetPasswordDto resetPasswordDto)
+        {
+            try
+            {
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
+
+                var result = await _authService.ResetPasswordAsync(resetPasswordDto);
+                _logger.LogInformation("Senha redefinida com sucesso: {Email}", resetPasswordDto.Email);
+
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _logger.LogWarning("Tentativa de redefinição de senha com código inválido: {Email}", resetPasswordDto.Email);
+                return Unauthorized(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Erro ao redefinir senha: {Email}", resetPasswordDto.Email);
                 return StatusCode(500, new { message = "Erro interno do servidor" });
             }
         }
