@@ -2,14 +2,18 @@ using EconomyBackPortifolio.DTOs;
 using EconomyBackPortifolio.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace EconomyBackPortifolio.Controllers
 {
+    /// <summary>
+    /// Controller responsável por todas as operações financeiras do usuário:
+    /// depósito, conversão de moeda, compra/venda de ativos e histórico de transações.
+    /// Todos os endpoints requerem autenticação JWT.
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
-    public class TransactionsController : ControllerBase
+    public class TransactionsController : BaseApiController
     {
         private readonly ITransactionService _transactionService;
         private readonly ILogger<TransactionsController> _logger;
@@ -21,9 +25,13 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Lista transações do usuário com filtros opcionais
-        /// Query params: type, currency, assetId, fromDate, toDate
+        /// Lista transações do usuário com filtros opcionais.
         /// </summary>
+        /// <param name="type">Tipo da transação: DEPOSIT, BUY, SELL, CONVERSION.</param>
+        /// <param name="currency">Moeda da wallet (ex: BRL, USD).</param>
+        /// <param name="assetId">ID do ativo para filtrar.</param>
+        /// <param name="fromDate">Data inicial do período.</param>
+        /// <param name="toDate">Data final do período.</param>
         [HttpGet]
         public async Task<ActionResult<IEnumerable<TransactionDto>>> GetTransactions(
             [FromQuery] string? type,
@@ -55,8 +63,8 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Resumo das transações do usuário agrupado por tipo e mês (para gráficos)
-        /// Query params: type, currency, assetId, fromDate, toDate
+        /// Retorna o resumo consolidado de transações agrupado por tipo e por mês.
+        /// Usado nos gráficos do dashboard.
         /// </summary>
         [HttpGet("summary")]
         public async Task<ActionResult<TransactionsSummaryDto>> GetTransactionsSummary(
@@ -89,7 +97,8 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Obtém uma transação específica por ID
+        /// Obtém uma transação específica por ID.
+        /// Retorna 404 se a transação não existir ou não pertencer ao usuário autenticado.
         /// </summary>
         [HttpGet("{id}")]
         public async Task<ActionResult<TransactionDto>> GetTransaction(Guid id)
@@ -100,9 +109,7 @@ namespace EconomyBackPortifolio.Controllers
                 var transaction = await _transactionService.GetTransactionByIdAsync(id, userId);
 
                 if (transaction == null)
-                {
                     return NotFound(new { message = "Transação não encontrada" });
-                }
 
                 return Ok(transaction);
             }
@@ -114,7 +121,7 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Realiza um depósito em BRL
+        /// Realiza um depósito em BRL na wallet padrão do usuário.
         /// </summary>
         [HttpPost("deposit")]
         public async Task<ActionResult<TransactionDto>> Deposit([FromBody] DepositDto depositDto)
@@ -122,15 +129,13 @@ namespace EconomyBackPortifolio.Controllers
             try
             {
                 if (!ModelState.IsValid)
-                {
                     return BadRequest(ModelState);
-                }
 
                 var userId = GetUserId();
                 var transaction = await _transactionService.DepositAsync(userId, depositDto);
-                
+
                 _logger.LogInformation("Depósito realizado: {Amount} BRL para usuário {UserId}", depositDto.Amount, userId);
-                
+
                 return CreatedAtAction(nameof(GetTransaction), new { id = transaction.Id }, transaction);
             }
             catch (InvalidOperationException ex)
@@ -146,7 +151,8 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Converte moeda de uma wallet para outra
+        /// Converte um valor de uma moeda para outra entre as wallets do usuário.
+        /// O campo ExchangeRate deve ser fornecido pelo front-end com a cotação atual.
         /// </summary>
         [HttpPost("convert")]
         public async Task<ActionResult<TransactionDto>> ConvertCurrency([FromBody] ConvertCurrencyDto convertDto)
@@ -154,21 +160,19 @@ namespace EconomyBackPortifolio.Controllers
             try
             {
                 if (!ModelState.IsValid)
-                {
                     return BadRequest(ModelState);
-                }
 
                 var userId = GetUserId();
                 var transaction = await _transactionService.ConvertCurrencyAsync(userId, convertDto);
-                
-                _logger.LogInformation("Conversão realizada: {Amount} {FromCurrency} para {ToCurrency} - usuário {UserId}", 
+
+                _logger.LogInformation("Conversão realizada: {Amount} {From} → {To} - usuário {UserId}",
                     convertDto.Amount, convertDto.FromCurrency, convertDto.ToCurrency, userId);
-                
+
                 return CreatedAtAction(nameof(GetTransaction), new { id = transaction.Id }, transaction);
             }
             catch (ArgumentException ex)
             {
-                _logger.LogWarning("Erro na conversão: {Message}", ex.Message);
+                _logger.LogWarning("Dados inválidos na conversão: {Message}", ex.Message);
                 return BadRequest(new { message = ex.Message });
             }
             catch (InvalidOperationException ex)
@@ -184,7 +188,8 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Compra um asset (investimento)
+        /// Compra um ativo investindo o valor da wallet correspondente.
+        /// O preço deve ser fornecido pelo front-end com a cotação atual do ativo.
         /// </summary>
         [HttpPost("buy")]
         public async Task<ActionResult<TransactionDto>> BuyAsset([FromBody] BuyAssetDto buyDto)
@@ -192,16 +197,14 @@ namespace EconomyBackPortifolio.Controllers
             try
             {
                 if (!ModelState.IsValid)
-                {
                     return BadRequest(ModelState);
-                }
 
                 var userId = GetUserId();
                 var transaction = await _transactionService.BuyAssetAsync(userId, buyDto);
-                
-                _logger.LogInformation("Compra realizada: {Quantity} de asset {AssetId} - usuário {UserId}", 
+
+                _logger.LogInformation("Compra realizada: {Quantity} de {AssetId} - usuário {UserId}",
                     buyDto.Quantity, buyDto.AssetId, userId);
-                
+
                 return CreatedAtAction(nameof(GetTransaction), new { id = transaction.Id }, transaction);
             }
             catch (InvalidOperationException ex)
@@ -217,7 +220,8 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Vende um asset
+        /// Vende um ativo creditando o valor na wallet e atualizando a posição.
+        /// Se toda a quantidade for vendida, a posição é removida automaticamente.
         /// </summary>
         [HttpPost("sell")]
         public async Task<ActionResult<TransactionDto>> SellAsset([FromBody] SellAssetDto sellDto)
@@ -225,16 +229,14 @@ namespace EconomyBackPortifolio.Controllers
             try
             {
                 if (!ModelState.IsValid)
-                {
                     return BadRequest(ModelState);
-                }
 
                 var userId = GetUserId();
                 var transaction = await _transactionService.SellAssetAsync(userId, sellDto);
-                
-                _logger.LogInformation("Venda realizada: {Quantity} de asset {AssetId} - usuário {UserId}", 
+
+                _logger.LogInformation("Venda realizada: {Quantity} de {AssetId} - usuário {UserId}",
                     sellDto.Quantity, sellDto.AssetId, userId);
-                
+
                 return CreatedAtAction(nameof(GetTransaction), new { id = transaction.Id }, transaction);
             }
             catch (InvalidOperationException ex)
@@ -247,16 +249,6 @@ namespace EconomyBackPortifolio.Controllers
                 _logger.LogError(ex, "Erro ao realizar venda");
                 return StatusCode(500, new { message = "Erro interno do servidor" });
             }
-        }
-
-        private Guid GetUserId()
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
-            {
-                throw new UnauthorizedAccessException("Usuário não autenticado");
-            }
-            return userId;
         }
     }
 }

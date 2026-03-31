@@ -1,19 +1,14 @@
 using EconomyBackPortifolio.Enums;
+using EconomyBackPortifolio.Settings;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
 
 namespace EconomyBackPortifolio.Services
 {
-    public class EmailSettings
-    {
-        public string SmtpServer { get; set; } = string.Empty;
-        public int SmtpPort { get; set; }
-        public string SenderEmail { get; set; } = string.Empty;
-        public string SenderName { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
-    }
-
+    /// <summary>
+    /// Serviço responsável pelo envio de e-mails transacionais via SMTP (MailKit).
+    /// </summary>
     public class EmailService : IEmailService
     {
         private readonly EmailSettings _emailSettings;
