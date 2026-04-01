@@ -131,32 +131,7 @@ builder.Services.AddCors(options =>
     });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// RATE LIMITING — Proteção contra brute-force nos endpoints de autenticação.
-// Com código de 6 dígitos (1.000.000 combinações), sem rate limit um atacante
-// consegue tentar todos os valores em minutos.
-// Política "auth": máximo 10 requisições por IP a cada 1 minuto.
-// ─────────────────────────────────────────────────────────────────────────────
-builder.Services.AddRateLimiter(options =>
-{
-    options.AddPolicy("auth", httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 10,
-                Window = TimeSpan.FromMinutes(1),
-                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                QueueLimit = 0
-            }));
 
-    // Resposta padrão quando o limite é atingido.
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BUILD
-// ─────────────────────────────────────────────────────────────────────────────
 var app = builder.Build();
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -202,6 +177,7 @@ app.UseCors("FrontendPolicy");
 app.UseRateLimiter();
 
 // 7. Autenticação e autorização
+
 app.UseAuthentication();
 app.UseAuthorization();
 

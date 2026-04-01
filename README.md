@@ -4,7 +4,7 @@ Backend API para gerenciamento de portfólio de investimentos.
 
 ## Tecnologias
 
-- .NET 8.0
+- .NET 10.0
 - Entity Framework Core
 - PostgreSQL
 - ASP.NET Core Web API
@@ -19,11 +19,13 @@ Backend API para gerenciamento de portfólio de investimentos.
 
 1. Clone o repositório
 2. Configure a connection string no `appsettings.Development.json` (use `appsettings.example.json` como referência)
-3. Execute o projeto
+3. Configure o seu SMTP para o envio de codigo 2FA.
+4. Execute o projeto
 
 ## Banco de Dados
 
 O projeto utiliza PostgreSQL. Certifique-se de ter o banco configurado antes de executar a aplicação.
+O PostGreSQL atualmente é utilizado localmente, em futuras versões poderá vir a ser hospedado.
 
 
 ## IIS
