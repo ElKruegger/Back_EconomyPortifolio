@@ -6,9 +6,16 @@ using Microsoft.AspNetCore.Mvc;
 namespace EconomyBackPortifolio.Controllers
 {
     /// <summary>
-    /// Controller responsável por todas as operações financeiras do usuário:
-    /// depósito, conversão de moeda, compra/venda de ativos e histórico de transações.
-    /// Todos os endpoints requerem autenticação JWT.
+    /// Handles all financial operations for the authenticated user.
+    /// Every money movement in the system goes through this controller and generates an immutable transaction record.
+    ///
+    /// Available transaction types:
+    /// - DEPOSIT   : Adds BRL funds to the user's BRL wallet (entry point for all capital).
+    /// - CONVERSION: Exchanges balance between two of the user's wallets (e.g. BRL -> USD).
+    /// - BUY       : Purchases an asset, debiting the wallet and creating/updating a position.
+    /// - SELL      : Sells an asset, crediting the wallet and reducing/removing a position.
+    ///
+    /// All endpoints require a valid JWT token and are scoped to the authenticated user.
     /// </summary>
     [ApiController]
     [Route("api/[controller]")]
@@ -25,13 +32,17 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Lista transações do usuário com filtros opcionais.
+        /// Returns the authenticated user's transaction history with optional filters.
+        /// All filters are optional — omitting them returns the full history.
+        /// Results are ordered by most recent first.
+        ///
+        /// Use this to render the transaction history list or feed export data.
         /// </summary>
-        /// <param name="type">Tipo da transação: DEPOSIT, BUY, SELL, CONVERSION.</param>
-        /// <param name="currency">Moeda da wallet (ex: BRL, USD).</param>
-        /// <param name="assetId">ID do ativo para filtrar.</param>
-        /// <param name="fromDate">Data inicial do período.</param>
-        /// <param name="toDate">Data final do período.</param>
+        /// <param name="type">Filter by transaction type: DEPOSIT, BUY, SELL, CONVERSION.</param>
+        /// <param name="currency">Filter by wallet currency (e.g. BRL, USD).</param>
+        /// <param name="assetId">Filter by a specific asset ID (GUID).</param>
+        /// <param name="fromDate">Filter transactions on or after this date (UTC).</param>
+        /// <param name="toDate">Filter transactions on or before this date (UTC).</param>
         [HttpGet]
         public async Task<ActionResult<IEnumerable<TransactionDto>>> GetTransactions(
             [FromQuery] string? type,
@@ -57,14 +68,21 @@ namespace EconomyBackPortifolio.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro ao listar transações do usuário");
-                return StatusCode(500, new { message = "Erro interno do servidor" });
+                _logger.LogError(ex, "Error listing transactions for user");
+                return StatusCode(500, new { message = "Internal server error" });
             }
         }
 
         /// <summary>
-        /// Retorna o resumo consolidado de transações agrupado por tipo e por mês.
-        /// Usado nos gráficos do dashboard.
+        /// Returns a consolidated summary of the user's transactions, grouped by type and by month.
+        /// Accepts the same optional filters as GET /api/transactions.
+        ///
+        /// Includes:
+        /// - TotalDeposits, TotalBuys, TotalSells, TotalConversions: aggregated totals.
+        /// - ByType: count and total amount for each transaction type (for bar/pie charts).
+        /// - MonthlyHistory: month-by-month breakdown (for line charts on the dashboard).
+        ///
+        /// Use this to power the analytics charts on the dashboard.
         /// </summary>
         [HttpGet("summary")]
         public async Task<ActionResult<TransactionsSummaryDto>> GetTransactionsSummary(
@@ -91,15 +109,17 @@ namespace EconomyBackPortifolio.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro ao obter resumo de transações");
-                return StatusCode(500, new { message = "Erro interno do servidor" });
+                _logger.LogError(ex, "Error fetching transaction summary");
+                return StatusCode(500, new { message = "Internal server error" });
             }
         }
 
         /// <summary>
-        /// Obtém uma transação específica por ID.
-        /// Retorna 404 se a transação não existir ou não pertencer ao usuário autenticado.
+        /// Returns a single transaction by its ID.
+        /// Only returns the transaction if it belongs to the authenticated user.
+        /// Returns 404 if the transaction does not exist or belongs to another user.
         /// </summary>
+        /// <param name="id">The transaction's unique identifier (GUID).</param>
         [HttpGet("{id}")]
         public async Task<ActionResult<TransactionDto>> GetTransaction(Guid id)
         {
@@ -109,19 +129,28 @@ namespace EconomyBackPortifolio.Controllers
                 var transaction = await _transactionService.GetTransactionByIdAsync(id, userId);
 
                 if (transaction == null)
-                    return NotFound(new { message = "Transação não encontrada" });
+                    return NotFound(new { message = "Transaction not found" });
 
                 return Ok(transaction);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro ao obter transação: {TransactionId}", id);
-                return StatusCode(500, new { message = "Erro interno do servidor" });
+                _logger.LogError(ex, "Error fetching transaction: {TransactionId}", id);
+                return StatusCode(500, new { message = "Internal server error" });
             }
         }
 
         /// <summary>
-        /// Realiza um depósito em BRL na wallet padrão do usuário.
+        /// Deposits an amount of BRL into the user's BRL wallet.
+        /// This is the entry point for all capital in the system — users must deposit
+        /// before they can buy assets or convert to other currencies.
+        ///
+        /// Rules:
+        /// - Amount must be greater than zero.
+        /// - The BRL wallet must exist (it is auto-created on registration).
+        ///
+        /// Returns 201 Created with the generated transaction record.
+        /// Example body: { "amount": 1000.00 }
         /// </summary>
         [HttpPost("deposit")]
         public async Task<ActionResult<TransactionDto>> Deposit([FromBody] DepositDto depositDto)
@@ -134,25 +163,34 @@ namespace EconomyBackPortifolio.Controllers
                 var userId = GetUserId();
                 var transaction = await _transactionService.DepositAsync(userId, depositDto);
 
-                _logger.LogInformation("Depósito realizado: {Amount} BRL para usuário {UserId}", depositDto.Amount, userId);
+                _logger.LogInformation("Deposit completed: {Amount} BRL for user {UserId}", depositDto.Amount, userId);
 
                 return CreatedAtAction(nameof(GetTransaction), new { id = transaction.Id }, transaction);
             }
             catch (InvalidOperationException ex)
             {
-                _logger.LogWarning("Erro ao realizar depósito: {Message}", ex.Message);
+                _logger.LogWarning("Deposit failed: {Message}", ex.Message);
                 return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro ao realizar depósito");
-                return StatusCode(500, new { message = "Erro interno do servidor" });
+                _logger.LogError(ex, "Error processing deposit");
+                return StatusCode(500, new { message = "Internal server error" });
             }
         }
 
         /// <summary>
-        /// Converte um valor de uma moeda para outra entre as wallets do usuário.
-        /// O campo ExchangeRate deve ser fornecido pelo front-end com a cotação atual.
+        /// Converts an amount from one of the user's wallets to another (e.g. BRL to USD).
+        /// Both wallets must already exist. The source wallet must have sufficient balance.
+        /// The exchange rate must be provided by the frontend using a live market quote.
+        ///
+        /// Rules:
+        /// - FromCurrency and ToCurrency must be different.
+        /// - Both wallets must belong to the authenticated user.
+        /// - Source wallet balance must be >= amount.
+        /// - ExchangeRate must be greater than zero.
+        ///
+        /// Example body: { "fromCurrency": "BRL", "toCurrency": "USD", "amount": 500.00, "exchangeRate": 5.75 }
         /// </summary>
         [HttpPost("convert")]
         public async Task<ActionResult<TransactionDto>> ConvertCurrency([FromBody] ConvertCurrencyDto convertDto)
@@ -165,31 +203,40 @@ namespace EconomyBackPortifolio.Controllers
                 var userId = GetUserId();
                 var transaction = await _transactionService.ConvertCurrencyAsync(userId, convertDto);
 
-                _logger.LogInformation("Conversão realizada: {Amount} {From} → {To} - usuário {UserId}",
+                _logger.LogInformation("Conversion completed: {Amount} {From} -> {To} for user {UserId}",
                     convertDto.Amount, convertDto.FromCurrency, convertDto.ToCurrency, userId);
 
                 return CreatedAtAction(nameof(GetTransaction), new { id = transaction.Id }, transaction);
             }
             catch (ArgumentException ex)
             {
-                _logger.LogWarning("Dados inválidos na conversão: {Message}", ex.Message);
+                _logger.LogWarning("Invalid conversion data: {Message}", ex.Message);
                 return BadRequest(new { message = ex.Message });
             }
             catch (InvalidOperationException ex)
             {
-                _logger.LogWarning("Erro ao realizar conversão: {Message}", ex.Message);
+                _logger.LogWarning("Conversion failed: {Message}", ex.Message);
                 return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro ao realizar conversão");
-                return StatusCode(500, new { message = "Erro interno do servidor" });
+                _logger.LogError(ex, "Error processing currency conversion");
+                return StatusCode(500, new { message = "Internal server error" });
             }
         }
 
         /// <summary>
-        /// Compra um ativo investindo o valor da wallet correspondente.
-        /// O preço deve ser fornecido pelo front-end com a cotação atual do ativo.
+        /// Purchases a given quantity of an asset using the wallet that matches the asset's currency.
+        /// Debits (wallet balance - total cost) and creates or updates the user's position for that asset.
+        /// If the user already holds this asset, the average price is recalculated automatically.
+        ///
+        /// Rules:
+        /// - The asset must exist in the catalog (use POST /api/assets to register it first).
+        /// - The user must have a wallet in the asset's currency with sufficient balance.
+        /// - Quantity and Price must be greater than zero.
+        /// - The price sent here should match the current market price at the time of the operation.
+        ///
+        /// Example body: { "assetId": "uuid", "quantity": 2.5, "price": 213.49 }
         /// </summary>
         [HttpPost("buy")]
         public async Task<ActionResult<TransactionDto>> BuyAsset([FromBody] BuyAssetDto buyDto)
@@ -202,26 +249,35 @@ namespace EconomyBackPortifolio.Controllers
                 var userId = GetUserId();
                 var transaction = await _transactionService.BuyAssetAsync(userId, buyDto);
 
-                _logger.LogInformation("Compra realizada: {Quantity} de {AssetId} - usuário {UserId}",
+                _logger.LogInformation("Buy completed: {Quantity} of asset {AssetId} for user {UserId}",
                     buyDto.Quantity, buyDto.AssetId, userId);
 
                 return CreatedAtAction(nameof(GetTransaction), new { id = transaction.Id }, transaction);
             }
             catch (InvalidOperationException ex)
             {
-                _logger.LogWarning("Erro ao realizar compra: {Message}", ex.Message);
+                _logger.LogWarning("Buy failed: {Message}", ex.Message);
                 return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro ao realizar compra");
-                return StatusCode(500, new { message = "Erro interno do servidor" });
+                _logger.LogError(ex, "Error processing buy");
+                return StatusCode(500, new { message = "Internal server error" });
             }
         }
 
         /// <summary>
-        /// Vende um ativo creditando o valor na wallet e atualizando a posição.
-        /// Se toda a quantidade for vendida, a posição é removida automaticamente.
+        /// Sells a given quantity of an asset from the user's position.
+        /// Credits the wallet with (quantity * price) and reduces the position accordingly.
+        /// If the entire quantity is sold, the position is automatically removed.
+        ///
+        /// Rules:
+        /// - The user must have an open position for that asset.
+        /// - The quantity sold cannot exceed the quantity currently held.
+        /// - Quantity and Price must be greater than zero.
+        /// - The price sent here should match the current market price at the time of the operation.
+        ///
+        /// Example body: { "assetId": "uuid", "quantity": 1.0, "price": 220.00 }
         /// </summary>
         [HttpPost("sell")]
         public async Task<ActionResult<TransactionDto>> SellAsset([FromBody] SellAssetDto sellDto)
@@ -234,20 +290,20 @@ namespace EconomyBackPortifolio.Controllers
                 var userId = GetUserId();
                 var transaction = await _transactionService.SellAssetAsync(userId, sellDto);
 
-                _logger.LogInformation("Venda realizada: {Quantity} de {AssetId} - usuário {UserId}",
+                _logger.LogInformation("Sell completed: {Quantity} of asset {AssetId} for user {UserId}",
                     sellDto.Quantity, sellDto.AssetId, userId);
 
                 return CreatedAtAction(nameof(GetTransaction), new { id = transaction.Id }, transaction);
             }
             catch (InvalidOperationException ex)
             {
-                _logger.LogWarning("Erro ao realizar venda: {Message}", ex.Message);
+                _logger.LogWarning("Sell failed: {Message}", ex.Message);
                 return BadRequest(new { message = ex.Message });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Erro ao realizar venda");
-                return StatusCode(500, new { message = "Erro interno do servidor" });
+                _logger.LogError(ex, "Error processing sell");
+                return StatusCode(500, new { message = "Internal server error" });
             }
         }
     }
