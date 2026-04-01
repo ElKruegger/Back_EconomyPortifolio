@@ -4,6 +4,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Gera o arquivo XML com os comentários /// para o Swagger exibir no UI -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Suprime o aviso CS1591 em membros sem comentário (evita ruído no build) -->
+    <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
