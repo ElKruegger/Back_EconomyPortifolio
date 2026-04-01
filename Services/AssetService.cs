@@ -20,15 +20,19 @@ namespace EconomyBackPortifolio.Services
             var normalizedSymbol = createAssetDto.Symbol.ToUpperInvariant().Trim();
             var normalizedCurrency = Currency.Normalize(createAssetDto.Currency);
 
-            // Validar moeda (por enquanto apenas USD)
-            if (normalizedCurrency != "USD")
-            {
-                throw new ArgumentException("Por enquanto, apenas assets em USD são suportados");
-            }
-
+            // CORREÇÃO: validação unificada — elimina dead code anterior onde a checagem
+            // de Currency.IsValid() nunca era alcançada após o bloco "apenas USD".
+            // Agora valida a moeda via Currency.IsValid() e depois aplica a restrição de negócio.
             if (!Currency.IsValid(normalizedCurrency))
             {
                 throw new ArgumentException($"Moeda inválida: {createAssetDto.Currency}. Moedas válidas: {string.Join(", ", Currency.ValidCurrencies)}");
+            }
+
+            // Restrição de negócio atual: apenas assets em USD são suportados.
+            // TODO: remover/ajustar quando suporte a outros mercados for implementado.
+            if (normalizedCurrency != "USD")
+            {
+                throw new ArgumentException("Por enquanto, apenas assets em USD são suportados");
             }
 
             // Verificar se já existe asset com esse símbolo

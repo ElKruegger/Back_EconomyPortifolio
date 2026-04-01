@@ -2,14 +2,19 @@ using EconomyBackPortifolio.DTOs;
 using EconomyBackPortifolio.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace EconomyBackPortifolio.Controllers
 {
+    /// <summary>
+    /// Controller responsável pelo portfólio de investimentos do usuário.
+    /// Uma posição (Position) representa a quantidade de um ativo mantido em uma wallet,
+    /// juntamente com o preço médio de custo e o valor atual.
+    /// Todos os endpoints requerem autenticação JWT.
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
-    public class PositionsController : ControllerBase
+    public class PositionsController : BaseApiController
     {
         private readonly IPositionService _positionService;
         private readonly ILogger<PositionsController> _logger;
@@ -21,7 +26,8 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Lista todas as posições (portfólio) do usuário autenticado
+        /// Lista todas as posições abertas do usuário com P&amp;L (lucro/prejuízo) calculado.
+        /// O P&amp;L é calculado em tempo real usando o preço atual do ativo armazenado na tabela assets.
         /// </summary>
         [HttpGet]
         public async Task<ActionResult<IEnumerable<PositionDto>>> GetPositions()
@@ -40,7 +46,8 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Resumo consolidado do portfólio (totais, alocação, P&L) para o dashboard
+        /// Retorna o resumo consolidado do portfólio para o dashboard:
+        /// total investido, valor atual, P&amp;L total, saldos por wallet e alocação por ativo.
         /// </summary>
         [HttpGet("summary")]
         public async Task<ActionResult<PortfolioSummaryDto>> GetPortfolioSummary()
@@ -59,7 +66,8 @@ namespace EconomyBackPortifolio.Controllers
         }
 
         /// <summary>
-        /// Obtém uma posição específica por ID
+        /// Obtém uma posição específica por ID com P&amp;L calculado.
+        /// Retorna 404 se não encontrada ou se não pertencer ao usuário autenticado.
         /// </summary>
         [HttpGet("{id}")]
         public async Task<ActionResult<PositionDto>> GetPosition(Guid id)
@@ -70,9 +78,7 @@ namespace EconomyBackPortifolio.Controllers
                 var position = await _positionService.GetPositionByIdAsync(id, userId);
 
                 if (position == null)
-                {
                     return NotFound(new { message = "Posição não encontrada" });
-                }
 
                 return Ok(position);
             }
@@ -81,16 +87,6 @@ namespace EconomyBackPortifolio.Controllers
                 _logger.LogError(ex, "Erro ao obter posição: {PositionId}", id);
                 return StatusCode(500, new { message = "Erro interno do servidor" });
             }
-        }
-
-        private Guid GetUserId()
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null || !Guid.TryParse(userIdClaim.Value, out var userId))
-            {
-                throw new UnauthorizedAccessException("Usuário não autenticado");
-            }
-            return userId;
         }
     }
 }
