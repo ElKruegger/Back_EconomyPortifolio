@@ -7,6 +7,7 @@ using System.Threading.RateLimiting;
 using EconomyBackPortifolio.Data;
 using EconomyBackPortifolio.Services;
 using EconomyBackPortifolio.Settings;
+using Resend;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -68,6 +69,20 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 var emailSettings = builder.Configuration.GetSection("EmailSettings").Get<EmailSettings>()
     ?? throw new InvalidOperationException("EmailSettings não configurado. Verifique as variáveis de ambiente.");
 builder.Services.AddSingleton(emailSettings);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RESEND — API de E-mail
+// Configure a chave da API via variável de ambiente RESEND_API_KEY no Railway.
+// ─────────────────────────────────────────────────────────────────────────────
+builder.Services.AddOptions();
+builder.Services.AddHttpClient<ResendClient>();
+builder.Services.Configure<ResendClientOptions>(o =>
+{
+    o.ApiToken = builder.Configuration["EmailSettings:ResendApiKey"] 
+        ?? Environment.GetEnvironmentVariable("RESEND_API_KEY")
+        ?? throw new InvalidOperationException("RESEND_API_KEY não configurado. Configure via variáveis de ambiente.");
+});
+builder.Services.AddTransient<IResend, ResendClient>();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SERVIÇOS DE APLICAÇÃO (Scoped — uma instância por requisição HTTP)
