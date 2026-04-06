@@ -173,12 +173,9 @@ using (var scope = app.Services.CreateScope())
 // A ordem dos middlewares é fundamental — siga a sequência abaixo.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// 1. Swagger — apenas em desenvolvimento
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// 1. Swagger — disponível em todos os ambientes para facilitar testes
+app.UseSwagger();
+app.UseSwaggerUI();
 
 // 2. Health check — endpoint público para monitoramento e Railway healthcheck
 // Retorna 200 OK com status da aplicação. Não requer autenticação.
