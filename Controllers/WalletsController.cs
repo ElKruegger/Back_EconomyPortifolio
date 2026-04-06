@@ -5,13 +5,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace EconomyBackPortifolio.Controllers
 {
-    /// <summary>
-    /// Manages the authenticated user's wallets.
-    /// A wallet represents a balance in a specific currency (BRL, USD, BTC, etc.).
-    /// Each user can hold one wallet per currency.
-    /// A BRL wallet is created automatically when the user registers.
-    /// All endpoints require a valid JWT token and are scoped to the authenticated user.
-    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
@@ -26,11 +19,6 @@ namespace EconomyBackPortifolio.Controllers
             _logger = logger;
         }
 
-        /// <summary>
-        /// Returns all wallets belonging to the authenticated user, ordered by currency.
-        /// Each wallet includes the current balance.
-        /// A newly registered user will have at least one wallet (BRL).
-        /// </summary>
         [HttpGet]
         public async Task<ActionResult<IEnumerable<WalletDto>>> GetWallets()
         {
@@ -47,12 +35,6 @@ namespace EconomyBackPortifolio.Controllers
             }
         }
 
-        /// <summary>
-        /// Returns a specific wallet by its ID.
-        /// Only returns the wallet if it belongs to the authenticated user.
-        /// Returns 404 if the wallet does not exist or belongs to another user.
-        /// </summary>
-        /// <param name="id">The wallet's unique identifier (GUID).</param>
         [HttpGet("{id}")]
         public async Task<ActionResult<WalletDto>> GetWallet(Guid id)
         {
@@ -73,14 +55,6 @@ namespace EconomyBackPortifolio.Controllers
             }
         }
 
-        /// <summary>
-        /// Returns the wallet for a specific currency belonging to the authenticated user.
-        /// Useful for checking available balance before executing a buy or convert operation.
-        /// Returns 404 if the user does not have a wallet for that currency yet.
-        ///
-        /// Example: GET /api/wallets/currency/USD
-        /// </summary>
-        /// <param name="currency">Currency code (e.g. BRL, USD, EUR, BTC).</param>
         [HttpGet("currency/{currency}")]
         public async Task<ActionResult<WalletDto>> GetWalletByCurrency(string currency)
         {
@@ -101,17 +75,6 @@ namespace EconomyBackPortifolio.Controllers
             }
         }
 
-        /// <summary>
-        /// Creates a new wallet for the authenticated user in the specified currency.
-        /// Each user can have only one wallet per currency.
-        /// The BRL wallet is auto-created on registration, so you don't need to call this for BRL.
-        ///
-        /// Rules:
-        /// - Currency must be a valid code (BRL, USD, EUR, GBP, BTC, ETH, etc.).
-        /// - Returns 409 Conflict if the user already has a wallet in that currency.
-        ///
-        /// Example body: { "currency": "USD" }
-        /// </summary>
         [HttpPost]
         public async Task<ActionResult<WalletDto>> CreateWallet([FromBody] CreateWalletDto createWalletDto)
         {
@@ -125,7 +88,6 @@ namespace EconomyBackPortifolio.Controllers
 
                 _logger.LogInformation("Wallet created: {Currency} for user {UserId}", createWalletDto.Currency, userId);
 
-                // Returns 201 Created with a Location header pointing to GET /api/wallets/{id}
                 return CreatedAtAction(nameof(GetWallet), new { id = wallet.Id }, wallet);
             }
             catch (ArgumentException ex)
