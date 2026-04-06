@@ -5,18 +5,6 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace EconomyBackPortifolio.Controllers
 {
-    /// <summary>
-    /// Handles all financial operations for the authenticated user.
-    /// Every money movement in the system goes through this controller and generates an immutable transaction record.
-    ///
-    /// Available transaction types:
-    /// - DEPOSIT   : Adds BRL funds to the user's BRL wallet (entry point for all capital).
-    /// - CONVERSION: Exchanges balance between two of the user's wallets (e.g. BRL -> USD).
-    /// - BUY       : Purchases an asset, debiting the wallet and creating/updating a position.
-    /// - SELL      : Sells an asset, crediting the wallet and reducing/removing a position.
-    ///
-    /// All endpoints require a valid JWT token and are scoped to the authenticated user.
-    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
@@ -31,18 +19,6 @@ namespace EconomyBackPortifolio.Controllers
             _logger = logger;
         }
 
-        /// <summary>
-        /// Returns the authenticated user's transaction history with optional filters.
-        /// All filters are optional — omitting them returns the full history.
-        /// Results are ordered by most recent first.
-        ///
-        /// Use this to render the transaction history list or feed export data.
-        /// </summary>
-        /// <param name="type">Filter by transaction type: DEPOSIT, BUY, SELL, CONVERSION.</param>
-        /// <param name="currency">Filter by wallet currency (e.g. BRL, USD).</param>
-        /// <param name="assetId">Filter by a specific asset ID (GUID).</param>
-        /// <param name="fromDate">Filter transactions on or after this date (UTC).</param>
-        /// <param name="toDate">Filter transactions on or before this date (UTC).</param>
         [HttpGet]
         public async Task<ActionResult<IEnumerable<TransactionDto>>> GetTransactions(
             [FromQuery] string? type,
@@ -73,17 +49,6 @@ namespace EconomyBackPortifolio.Controllers
             }
         }
 
-        /// <summary>
-        /// Returns a consolidated summary of the user's transactions, grouped by type and by month.
-        /// Accepts the same optional filters as GET /api/transactions.
-        ///
-        /// Includes:
-        /// - TotalDeposits, TotalBuys, TotalSells, TotalConversions: aggregated totals.
-        /// - ByType: count and total amount for each transaction type (for bar/pie charts).
-        /// - MonthlyHistory: month-by-month breakdown (for line charts on the dashboard).
-        ///
-        /// Use this to power the analytics charts on the dashboard.
-        /// </summary>
         [HttpGet("summary")]
         public async Task<ActionResult<TransactionsSummaryDto>> GetTransactionsSummary(
             [FromQuery] string? type,
@@ -114,12 +79,6 @@ namespace EconomyBackPortifolio.Controllers
             }
         }
 
-        /// <summary>
-        /// Returns a single transaction by its ID.
-        /// Only returns the transaction if it belongs to the authenticated user.
-        /// Returns 404 if the transaction does not exist or belongs to another user.
-        /// </summary>
-        /// <param name="id">The transaction's unique identifier (GUID).</param>
         [HttpGet("{id}")]
         public async Task<ActionResult<TransactionDto>> GetTransaction(Guid id)
         {
@@ -140,18 +99,6 @@ namespace EconomyBackPortifolio.Controllers
             }
         }
 
-        /// <summary>
-        /// Deposits an amount of BRL into the user's BRL wallet.
-        /// This is the entry point for all capital in the system — users must deposit
-        /// before they can buy assets or convert to other currencies.
-        ///
-        /// Rules:
-        /// - Amount must be greater than zero.
-        /// - The BRL wallet must exist (it is auto-created on registration).
-        ///
-        /// Returns 201 Created with the generated transaction record.
-        /// Example body: { "amount": 1000.00 }
-        /// </summary>
         [HttpPost("deposit")]
         public async Task<ActionResult<TransactionDto>> Deposit([FromBody] DepositDto depositDto)
         {
@@ -179,19 +126,6 @@ namespace EconomyBackPortifolio.Controllers
             }
         }
 
-        /// <summary>
-        /// Converts an amount from one of the user's wallets to another (e.g. BRL to USD).
-        /// Both wallets must already exist. The source wallet must have sufficient balance.
-        /// The exchange rate must be provided by the frontend using a live market quote.
-        ///
-        /// Rules:
-        /// - FromCurrency and ToCurrency must be different.
-        /// - Both wallets must belong to the authenticated user.
-        /// - Source wallet balance must be >= amount.
-        /// - ExchangeRate must be greater than zero.
-        ///
-        /// Example body: { "fromCurrency": "BRL", "toCurrency": "USD", "amount": 500.00, "exchangeRate": 5.75 }
-        /// </summary>
         [HttpPost("convert")]
         public async Task<ActionResult<TransactionDto>> ConvertCurrency([FromBody] ConvertCurrencyDto convertDto)
         {
@@ -225,19 +159,6 @@ namespace EconomyBackPortifolio.Controllers
             }
         }
 
-        /// <summary>
-        /// Purchases a given quantity of an asset using the wallet that matches the asset's currency.
-        /// Debits (wallet balance - total cost) and creates or updates the user's position for that asset.
-        /// If the user already holds this asset, the average price is recalculated automatically.
-        ///
-        /// Rules:
-        /// - The asset must exist in the catalog (use POST /api/assets to register it first).
-        /// - The user must have a wallet in the asset's currency with sufficient balance.
-        /// - Quantity and Price must be greater than zero.
-        /// - The price sent here should match the current market price at the time of the operation.
-        ///
-        /// Example body: { "assetId": "uuid", "quantity": 2.5, "price": 213.49 }
-        /// </summary>
         [HttpPost("buy")]
         public async Task<ActionResult<TransactionDto>> BuyAsset([FromBody] BuyAssetDto buyDto)
         {
@@ -266,19 +187,6 @@ namespace EconomyBackPortifolio.Controllers
             }
         }
 
-        /// <summary>
-        /// Sells a given quantity of an asset from the user's position.
-        /// Credits the wallet with (quantity * price) and reduces the position accordingly.
-        /// If the entire quantity is sold, the position is automatically removed.
-        ///
-        /// Rules:
-        /// - The user must have an open position for that asset.
-        /// - The quantity sold cannot exceed the quantity currently held.
-        /// - Quantity and Price must be greater than zero.
-        /// - The price sent here should match the current market price at the time of the operation.
-        ///
-        /// Example body: { "assetId": "uuid", "quantity": 1.0, "price": 220.00 }
-        /// </summary>
         [HttpPost("sell")]
         public async Task<ActionResult<TransactionDto>> SellAsset([FromBody] SellAssetDto sellDto)
         {

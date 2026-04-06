@@ -9,6 +9,10 @@ namespace EconomyBackPortifolio.Migrations
     /// Initial migration — creates all base tables for the Economy Portfolio schema.
     /// Must run before any other migration.
     ///
+    /// Written as idempotent raw SQL (CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS)
+    /// so it never fails on re-runs or when deploying against a database that already has
+    /// these tables (e.g. after a Railway volume reset or a partial previous deploy).
+    ///
     /// Tables created:
     ///   - users        : registered user accounts
     ///   - assets       : global tradeable asset catalog (stocks, crypto, ETFs)
@@ -16,172 +20,119 @@ namespace EconomyBackPortifolio.Migrations
     ///   - positions    : open investment holdings per user per asset
     ///   - transactions : immutable record of all financial operations
     ///
-    /// Note: email_verified column on users and the verification_codes table
-    /// are added by the next migration (20260216232615_AddVerificationCodesAndEmailVerified).
+    /// Note: email_verified and verification_codes are handled by the next migration.
     /// </summary>
     public partial class InitialCreate : Migration
     {
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             // ─── users ────────────────────────────────────────────────────────
-            migrationBuilder.CreateTable(
-                name: "users",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    email = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false),
-                    password_hash = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_users", x => x.id);
-                });
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS users (
+                    id            uuid                        NOT NULL,
+                    name          character varying(100)      NOT NULL,
+                    email         character varying(150)      NOT NULL,
+                    password_hash character varying(255)      NOT NULL,
+                    created_at    timestamp with time zone    NOT NULL,
+                    CONSTRAINT pk_users PRIMARY KEY (id)
+                );
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "uk_users_email",
-                table: "users",
-                column: "email",
-                unique: true);
+            migrationBuilder.Sql(@"
+                CREATE UNIQUE INDEX IF NOT EXISTS uk_users_email ON users (email);
+            ");
 
             // ─── assets ───────────────────────────────────────────────────────
-            migrationBuilder.CreateTable(
-                name: "assets",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    symbol = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
-                    name = table.Column<string>(type: "character varying(150)", maxLength: 150, nullable: false),
-                    type = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
-                    currency = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: false),
-                    current_price = table.Column<decimal>(type: "numeric(18,6)", precision: 18, scale: 6, nullable: false),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_assets", x => x.id);
-                });
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS assets (
+                    id            uuid                        NOT NULL,
+                    symbol        character varying(20)       NOT NULL,
+                    name          character varying(150)      NOT NULL,
+                    type          character varying(20)       NOT NULL,
+                    currency      character varying(10)       NOT NULL,
+                    current_price numeric(18,6)               NOT NULL,
+                    created_at    timestamp with time zone    NOT NULL,
+                    CONSTRAINT pk_assets PRIMARY KEY (id)
+                );
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "uk_assets_symbol",
-                table: "assets",
-                column: "symbol",
-                unique: true);
+            migrationBuilder.Sql(@"
+                CREATE UNIQUE INDEX IF NOT EXISTS uk_assets_symbol ON assets (symbol);
+            ");
 
             // ─── wallets ──────────────────────────────────────────────────────
-            migrationBuilder.CreateTable(
-                name: "wallets",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    currency = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: false),
-                    balance = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_wallets", x => x.id);
-                    table.ForeignKey(
-                        name: "fk_wallets_user_id__users",
-                        column: x => x.user_id,
-                        principalTable: "users",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                });
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS wallets (
+                    id         uuid                        NOT NULL,
+                    user_id    uuid                        NOT NULL,
+                    currency   character varying(10)       NOT NULL,
+                    balance    numeric(18,2)               NOT NULL,
+                    created_at timestamp with time zone    NOT NULL,
+                    CONSTRAINT pk_wallets    PRIMARY KEY (id),
+                    CONSTRAINT fk_wallets_user_id__users
+                        FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+                );
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "ix_wallets_user_id",
-                table: "wallets",
-                column: "user_id");
+            migrationBuilder.Sql(@"
+                CREATE INDEX IF NOT EXISTS ix_wallets_user_id ON wallets (user_id);
+            ");
 
             // ─── positions ────────────────────────────────────────────────────
-            migrationBuilder.CreateTable(
-                name: "positions",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    wallet_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    asset_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    quantity = table.Column<decimal>(type: "numeric(18,6)", precision: 18, scale: 6, nullable: false),
-                    average_price = table.Column<decimal>(type: "numeric(18,6)", precision: 18, scale: 6, nullable: false),
-                    total_invested = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
-                    updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_positions", x => x.id);
-                    table.ForeignKey(
-                        name: "fk_positions_wallet_id__wallets",
-                        column: x => x.wallet_id,
-                        principalTable: "wallets",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "fk_positions_asset_id__assets",
-                        column: x => x.asset_id,
-                        principalTable: "assets",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Restrict);
-                });
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS positions (
+                    id             uuid                        NOT NULL,
+                    wallet_id      uuid                        NOT NULL,
+                    asset_id       uuid                        NOT NULL,
+                    quantity       numeric(18,6)               NOT NULL,
+                    average_price  numeric(18,6)               NOT NULL,
+                    total_invested numeric(18,2)               NOT NULL,
+                    updated_at     timestamp with time zone    NOT NULL,
+                    CONSTRAINT pk_positions PRIMARY KEY (id),
+                    CONSTRAINT fk_positions_wallet_id__wallets
+                        FOREIGN KEY (wallet_id) REFERENCES wallets (id) ON DELETE CASCADE,
+                    CONSTRAINT fk_positions_asset_id__assets
+                        FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE RESTRICT
+                );
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "uk_positions_wallet_asset",
-                table: "positions",
-                columns: new[] { "wallet_id", "asset_id" },
-                unique: true);
+            migrationBuilder.Sql(@"
+                CREATE UNIQUE INDEX IF NOT EXISTS uk_positions_wallet_asset ON positions (wallet_id, asset_id);
+            ");
 
             // ─── transactions ─────────────────────────────────────────────────
-            migrationBuilder.CreateTable(
-                name: "transactions",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    wallet_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    asset_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    type = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
-                    quantity = table.Column<decimal>(type: "numeric(18,6)", precision: 18, scale: 6, nullable: true),
-                    price = table.Column<decimal>(type: "numeric(18,6)", precision: 18, scale: 6, nullable: true),
-                    total = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
-                    transaction_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_transactions", x => x.id);
-                    table.ForeignKey(
-                        name: "fk_transactions_wallet_id__wallets",
-                        column: x => x.wallet_id,
-                        principalTable: "wallets",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "fk_transactions_asset_id__assets",
-                        column: x => x.asset_id,
-                        principalTable: "assets",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.SetNull);
-                });
+            migrationBuilder.Sql(@"
+                CREATE TABLE IF NOT EXISTS transactions (
+                    id             uuid                        NOT NULL,
+                    wallet_id      uuid                        NOT NULL,
+                    asset_id       uuid,
+                    type           character varying(20)       NOT NULL,
+                    quantity       numeric(18,6),
+                    price          numeric(18,6),
+                    total          numeric(18,2)               NOT NULL,
+                    transaction_at timestamp with time zone    NOT NULL,
+                    created_at     timestamp with time zone    NOT NULL,
+                    CONSTRAINT pk_transactions PRIMARY KEY (id),
+                    CONSTRAINT fk_transactions_wallet_id__wallets
+                        FOREIGN KEY (wallet_id) REFERENCES wallets (id) ON DELETE CASCADE,
+                    CONSTRAINT fk_transactions_asset_id__assets
+                        FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE SET NULL
+                );
+            ");
 
-            migrationBuilder.CreateIndex(
-                name: "ix_transactions_wallet_id",
-                table: "transactions",
-                column: "wallet_id");
-
-            migrationBuilder.CreateIndex(
-                name: "ix_transactions_asset_id",
-                table: "transactions",
-                column: "asset_id");
+            migrationBuilder.Sql(@"
+                CREATE INDEX IF NOT EXISTS ix_transactions_wallet_id ON transactions (wallet_id);
+                CREATE INDEX IF NOT EXISTS ix_transactions_asset_id  ON transactions (asset_id);
+            ");
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(name: "transactions");
-            migrationBuilder.DropTable(name: "positions");
-            migrationBuilder.DropTable(name: "wallets");
-            migrationBuilder.DropTable(name: "assets");
-            migrationBuilder.DropTable(name: "users");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS transactions;");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS positions;");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS wallets;");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS assets;");
+            migrationBuilder.Sql("DROP TABLE IF EXISTS users;");
         }
     }
 }
