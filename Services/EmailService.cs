@@ -1,22 +1,22 @@
 using EconomyBackPortifolio.Enums;
 using EconomyBackPortifolio.Settings;
-using MailKit.Net.Smtp;
-using MailKit.Security;
-using MimeKit;
+using Resend;
 
 namespace EconomyBackPortifolio.Services
 {
     /// <summary>
-    /// Serviço responsável pelo envio de e-mails transacionais via SMTP (MailKit).
+    /// Serviço responsável pelo envio de e-mails transacionais via Resend API.
     /// </summary>
     public class EmailService : IEmailService
     {
         private readonly EmailSettings _emailSettings;
+        private readonly IResend _resend;
         private readonly ILogger<EmailService> _logger;
 
-        public EmailService(EmailSettings emailSettings, ILogger<EmailService> logger)
+        public EmailService(EmailSettings emailSettings, IResend resend, ILogger<EmailService> logger)
         {
             _emailSettings = emailSettings;
+            _resend = resend;
             _logger = logger;
         }
 
@@ -24,33 +24,30 @@ namespace EconomyBackPortifolio.Services
         {
             var (subject, body) = BuildEmailContent(userName, code, type);
 
-            var message = new MimeMessage();
-            message.From.Add(new MailboxAddress(_emailSettings.SenderName, _emailSettings.SenderEmail));
-            message.To.Add(new MailboxAddress(userName, toEmail));
-            message.Subject = subject;
-
-            var bodyBuilder = new BodyBuilder
+            var emailMessage = new EmailMessage
             {
+                From = $"{_emailSettings.SenderName} <{_emailSettings.SenderEmail}>",
+                Subject = subject,
                 HtmlBody = body
             };
-            message.Body = bodyBuilder.ToMessageBody();
+            emailMessage.To.Add(toEmail);
 
-            using var client = new SmtpClient();
             try
             {
-                await client.ConnectAsync(_emailSettings.SmtpServer, _emailSettings.SmtpPort, SecureSocketOptions.StartTls);
-                await client.AuthenticateAsync(_emailSettings.SenderEmail, _emailSettings.Password);
-                await client.SendAsync(message);
-                _logger.LogInformation("E-mail de verificação ({Type}) enviado para {Email}", type, toEmail);
+                var response = await _resend.EmailSendAsync(emailMessage);
+                
+                if (response.Id == null)
+                {
+                    _logger.LogError("Erro ao enviar e-mail via Resend: {Error}", response.Error?.Message ?? "Erro desconhecido");
+                    throw new InvalidOperationException("Falha ao enviar e-mail de verificação. Tente novamente mais tarde.");
+                }
+
+                _logger.LogInformation("E-mail de verificação ({Type}) enviado para {Email} com ID {ResendId}", type, toEmail, response.Id);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Falha ao enviar e-mail de verificação para {Email}", toEmail);
                 throw new InvalidOperationException("Falha ao enviar e-mail de verificação. Tente novamente mais tarde.");
-            }
-            finally
-            {
-                await client.DisconnectAsync(true);
             }
         }
 
