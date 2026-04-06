@@ -33,7 +33,7 @@ namespace EconomyBackPortifolio.Services
             try
             {
                 await client.ConnectAsync(_emailSettings.SmtpServer, _emailSettings.SmtpPort, SecureSocketOptions.StartTls);
-                await client.AuthenticateAsync(_emailSettings.SenderEmail, _emailSettings.Password);
+                await client.AuthenticateAsync("resend", _emailSettings.Password);
                 await client.SendAsync(message);
                 _logger.LogInformation("E-mail de verificação ({Type}) enviado para {Email}", type, toEmail);
             }
