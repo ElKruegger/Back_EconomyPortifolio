@@ -7,7 +7,6 @@ using System.Threading.RateLimiting;
 using EconomyBackPortifolio.Data;
 using EconomyBackPortifolio.Services;
 using EconomyBackPortifolio.Settings;
-using Resend;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,8 +18,6 @@ builder.Services.AddEndpointsApiExplorer();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SWAGGER / OPENAPI
-// Documentação interativa da API com suporte a autenticação JWT.
-// Disponível apenas em Development para não expor contratos em produção.
 // ─────────────────────────────────────────────────────────────────────────────
 builder.Services.AddSwaggerGen(c =>
 {
@@ -49,40 +46,21 @@ builder.Services.AddSwaggerGen(c =>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BANCO DE DADOS — Entity Framework Core + PostgreSQL
-// A connection string é lida de variáveis de ambiente (Railway injeta automaticamente).
-// IMPORTANTE: nunca commite credenciais reais no appsettings.json.
 // ─────────────────────────────────────────────────────────────────────────────
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UNIT OF WORK
-// Padrão que encapsula transações de banco de dados.
-// Garante atomicidade nas operações financeiras (buy/sell/deposit).
 // ─────────────────────────────────────────────────────────────────────────────
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CONFIGURAÇÕES DE E-MAIL
-// Lidas da seção "EmailSettings" e registradas como singleton para injeção.
+// CONFIGURAÇÕES DE E-MAIL (MailKit via SMTP relay)
 // ─────────────────────────────────────────────────────────────────────────────
 var emailSettings = builder.Configuration.GetSection("EmailSettings").Get<EmailSettings>()
     ?? throw new InvalidOperationException("EmailSettings não configurado. Verifique as variáveis de ambiente.");
 builder.Services.AddSingleton(emailSettings);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// RESEND — API de E-mail
-// Configure a chave da API via variável de ambiente RESEND_API_KEY no Railway.
-// ─────────────────────────────────────────────────────────────────────────────
-builder.Services.AddOptions();
-builder.Services.AddHttpClient<ResendClient>();
-builder.Services.Configure<ResendClientOptions>(o =>
-{
-    o.ApiToken = builder.Configuration["EmailSettings:ResendApiKey"] 
-        ?? Environment.GetEnvironmentVariable("RESEND_API_KEY")
-        ?? throw new InvalidOperationException("RESEND_API_KEY não configurado. Configure via variáveis de ambiente.");
-});
-builder.Services.AddTransient<IResend, ResendClient>();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SERVIÇOS DE APLICAÇÃO (Scoped — uma instância por requisição HTTP)
@@ -97,8 +75,6 @@ builder.Services.AddScoped<IPositionService, PositionService>();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTENTICAÇÃO JWT
-// Valida o token em cada requisição protegida por [Authorize].
-// ClockSkew = Zero elimina a tolerância de 5 min padrão na expiração do token.
 // ─────────────────────────────────────────────────────────────────────────────
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["SecretKey"]
@@ -128,9 +104,6 @@ builder.Services.AddAuthorization();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RATE LIMITING — Proteção contra brute-force nos endpoints de autenticação.
-// Com código de 6 dígitos (1.000.000 combinações), sem rate limit um atacante
-// consegue tentar todos os valores em minutos.
-// Política "auth": máximo 10 requisições por IP a cada 1 minuto.
 // ─────────────────────────────────────────────────────────────────────────────
 builder.Services.AddRateLimiter(options =>
 {
@@ -145,14 +118,11 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0
             }));
 
-    // Resposta padrão quando o limite é atingido.
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CORS — Cross-Origin Resource Sharing
-// Origens permitidas lidas de variável de ambiente (Cors:AllowedOrigins).
-// Em desenvolvimento, cai no fallback localhost:3000 e localhost:5173 (Vite).
+// CORS
 // ─────────────────────────────────────────────────────────────────────────────
 var allowedOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins")
@@ -169,13 +139,10 @@ builder.Services.AddCors(options =>
     });
 });
 
-
 var app = builder.Build();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MIGRATIONS AUTOMÁTICAS
-// Aplica pendências do EF Core automaticamente na inicialização.
-// Garante que o banco esteja sempre atualizado no Railway sem intervenção manual.
 // ─────────────────────────────────────────────────────────────────────────────
 using (var scope = app.Services.CreateScope())
 {
@@ -184,39 +151,30 @@ using (var scope = app.Services.CreateScope())
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PIPELINE DE REQUISIÇÃO HTTP
-// A ordem dos middlewares é fundamental — siga a sequência abaixo.
+// PIPELINE DE MIDDLEWARE
 // ─────────────────────────────────────────────────────────────────────────────
 
 // 1. Swagger — disponível em todos os ambientes para facilitar testes
 app.UseSwagger();
 app.UseSwaggerUI();
 
-// 2. Health check — endpoint público para monitoramento e Railway healthcheck
-// Retorna 200 OK com status da aplicação. Não requer autenticação.
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
-   .AllowAnonymous()
-   .WithTags("Health");
+// 2. Healthcheck — usado pelo Railway para confirmar que o serviço está vivo
+app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
-// 3. Middleware global de tratamento de exceções (retorna JSON padronizado)
-app.UseMiddleware<EconomyBackPortifolio.Middleware.ExceptionHandlingMiddleware>();
-
-// 4. Redirecionamento HTTPS
-// Nota: no Railway o TLS é terminado no proxy — este middleware é seguro manter.
+// 3. HTTPS redirect
 app.UseHttpsRedirection();
 
-// 5. CORS — deve vir antes de Authentication/Authorization
+// 4. CORS — deve vir antes de autenticação/autorização
 app.UseCors("FrontendPolicy");
 
-// 6. Rate Limiting
+// 5. Rate Limiting
 app.UseRateLimiter();
 
-// 7. Autenticação e autorização
-
+// 6. Autenticação e autorização
 app.UseAuthentication();
 app.UseAuthorization();
 
-// 8. Mapeamento de controllers
+// 7. Mapeia os controllers
 app.MapControllers();
 
 app.Run();
