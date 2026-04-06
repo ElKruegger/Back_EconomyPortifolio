@@ -74,6 +74,13 @@ builder.Services.AddScoped<IAssetService, AssetService>();
 builder.Services.AddScoped<IPositionService, PositionService>();
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SERVIÇOS DE CONTROLE FINANCEIRO (funcionalidade central do produto)
+// ─────────────────────────────────────────────────────────────────────────────
+builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<IFinancialEntryService, FinancialEntryService>();
+builder.Services.AddScoped<IClientService, ClientService>();
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AUTENTICAÇÃO JWT
 // ─────────────────────────────────────────────────────────────────────────────
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");

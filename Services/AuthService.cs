@@ -15,6 +15,11 @@ namespace EconomyBackPortifolio.Services
     /// <summary>
     /// Serviço responsável pela autenticação de usuários: registro, login com 2FA,
     /// verificação de código, redefinição de senha e geração de tokens JWT.
+    ///
+    /// Alterações em relação à versão anterior:
+    ///   - RegisterAsync agora persiste ProfileType e CompanyName
+    ///   - GenerateJwtToken inclui claims de ProfileType e PlanType
+    ///   - GetUserByIdAsync retorna UserInfoDto com todos os campos públicos
     /// </summary>
     public class AuthService : IAuthService
     {
@@ -39,14 +44,17 @@ namespace EconomyBackPortifolio.Services
         /// Registra um novo usuário, cria a wallet BRL padrão e envia o código de verificação.
         /// O e-mail só será marcado como verificado após a conclusão do fluxo via VerifyCodeAsync.
         /// </summary>
-        /// <exception cref="InvalidOperationException">Se o e-mail já estiver em uso.</exception>
+        /// <exception cref="InvalidOperationException">Se o e-mail já estiver em uso ou dados inválidos.</exception>
         public async Task<MessageResponseDto> RegisterAsync(RegisterDto registerDto)
         {
             var existingUser = await GetUserByEmailAsync(registerDto.Email);
             if (existingUser != null)
-            {
                 throw new InvalidOperationException("Email já está em uso");
-            }
+
+            // Valida que CompanyName foi informado para perfil Empresa.
+            if (registerDto.ProfileType == ProfileType.Empresa
+                && string.IsNullOrWhiteSpace(registerDto.CompanyName))
+                throw new InvalidOperationException("O nome da empresa é obrigatório para o perfil Empresa.");
 
             // BCrypt com work factor padrão (10) — adequado para produção.
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(registerDto.Password);
@@ -58,6 +66,11 @@ namespace EconomyBackPortifolio.Services
                 Email = registerDto.Email.ToLowerInvariant(),
                 PasswordHash = passwordHash,
                 EmailVerified = false,
+                ProfileType = registerDto.ProfileType,
+                PlanType = PlanType.Basic,
+                CompanyName = registerDto.ProfileType == ProfileType.Empresa
+                    ? registerDto.CompanyName?.Trim()
+                    : null,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -76,7 +89,7 @@ namespace EconomyBackPortifolio.Services
 
         /// <summary>
         /// Valida as credenciais do usuário e envia o código 2FA para o e-mail cadastrado.
-        /// CORREÇÃO: verifica se o e-mail foi confirmado antes de prosseguir com o login.
+        /// Verifica se o e-mail foi confirmado antes de prosseguir com o login.
         /// </summary>
         /// <exception cref="UnauthorizedAccessException">Credenciais inválidas ou e-mail não verificado.</exception>
         public async Task<MessageResponseDto> LoginAsync(LoginDto loginDto)
@@ -85,18 +98,11 @@ namespace EconomyBackPortifolio.Services
 
             // Comparação constante evita timing attacks: nunca revele qual campo está errado.
             if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
-            {
                 throw new UnauthorizedAccessException("Email ou senha inválidos");
-            }
 
-            // CORREÇÃO CRÍTICA: impede login de contas com e-mail não verificado.
-            // Antes desta correção, um usuário registrado mas não verificado conseguia logar.
             if (!user.EmailVerified)
-            {
                 throw new UnauthorizedAccessException("E-mail não verificado. Confirme seu cadastro antes de fazer login.");
-            }
 
-            // Envia o código 2FA de login por e-mail.
             await _verificationCodeService.GenerateAndSendCodeAsync(
                 user.Id, user.Email, user.Name, VerificationCodeType.Login);
 
@@ -113,7 +119,6 @@ namespace EconomyBackPortifolio.Services
             var user = await _verificationCodeService.ValidateCodeAsync(
                 verifyCodeDto.Email, verifyCodeDto.Code, verifyCodeDto.Type);
 
-            // Fluxo de registro: marca o e-mail como verificado após validação bem-sucedida.
             if (verifyCodeDto.Type == VerificationCodeType.Registration)
             {
                 user.EmailVerified = true;
@@ -131,12 +136,7 @@ namespace EconomyBackPortifolio.Services
                 Token = token,
                 RefreshToken = refreshToken,
                 ExpiresAt = DateTime.UtcNow.AddMinutes(GetJwtExpirationMinutes()),
-                User = new UserInfoDto
-                {
-                    Id = user.Id,
-                    Name = user.Name,
-                    Email = user.Email
-                }
+                User = MapToUserInfoDto(user)
             };
         }
 
@@ -148,7 +148,6 @@ namespace EconomyBackPortifolio.Services
         {
             var user = await GetUserByEmailAsync(forgotPasswordDto.Email.ToLowerInvariant());
 
-            // Resposta genérica mesmo quando o e-mail não existe — evita user enumeration.
             if (user != null)
             {
                 await _verificationCodeService.GenerateAndSendCodeAsync(
@@ -206,12 +205,7 @@ namespace EconomyBackPortifolio.Services
             if (user == null)
                 return null;
 
-            return new UserInfoDto
-            {
-                Id = user.Id,
-                Name = user.Name,
-                Email = user.Email
-            };
+            return MapToUserInfoDto(user);
         }
 
         // ─────────────────────────────────────────────────────────────────────
@@ -220,7 +214,8 @@ namespace EconomyBackPortifolio.Services
 
         /// <summary>
         /// Gera o token JWT com os claims do usuário.
-        /// O token inclui: NameIdentifier (userId), Email, Name e Jti (ID único do token).
+        /// Inclui: NameIdentifier (userId), Email, Name, ProfileType, PlanType e Jti.
+        /// Os claims de perfil e plano permitem que o frontend adapte a UI sem nova requisição.
         /// </summary>
         private string GenerateJwtToken(Users user)
         {
@@ -237,6 +232,8 @@ namespace EconomyBackPortifolio.Services
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Email, user.Email),
                 new Claim(ClaimTypes.Name, user.Name),
+                new Claim("profile_type", ((int)user.ProfileType).ToString()),
+                new Claim("plan_type", ((int)user.PlanType).ToString()),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
@@ -271,5 +268,21 @@ namespace EconomyBackPortifolio.Services
             var jwtSettings = _configuration.GetSection("JwtSettings");
             return int.TryParse(jwtSettings["ExpirationMinutes"], out var minutes) ? minutes : 30;
         }
+
+        /// <summary>
+        /// Mapeia um Users para UserInfoDto com todos os campos públicos.
+        /// Centralizado para garantir consistência entre Register, Login e GetMe.
+        /// </summary>
+        private static UserInfoDto MapToUserInfoDto(Users user) => new()
+        {
+            Id = user.Id,
+            Name = user.Name,
+            Email = user.Email,
+            ProfileType = user.ProfileType,
+            PlanType = user.PlanType,
+            CompanyName = user.CompanyName,
+            PlanExpiresAt = user.PlanExpiresAt,
+            CreatedAt = user.CreatedAt
+        };
     }
 }
